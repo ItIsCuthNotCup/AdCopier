@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       questions as never
     );
     const a = res.answers as Record<string, { score?: number; noul?: number }>;
+    const seen = new Set<string>();
     const ranked = candidates
       .map((c) => {
         const s = a[`conv_${c.id}`]?.score ?? 0; // 0..3
@@ -59,6 +60,13 @@ export async function POST(req: NextRequest) {
         return { ...c, score: s / 3, onBrand: ob, rankScore: (s / 3) * ob };
       })
       .sort((x, y) => y.rankScore - x.rankScore)
+      .filter((c) => {
+        // top-N must be distinct: skip dupes of already-selected headline/body
+        if (seen.has(c.body) || seen.has(c.headline)) return false;
+        seen.add(c.body);
+        seen.add(c.headline);
+        return true;
+      })
       .slice(0, Math.max(1, Math.min(20, count)));
     return NextResponse.json({ ads: ranked });
   } catch (err) {

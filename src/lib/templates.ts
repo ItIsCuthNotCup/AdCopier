@@ -17,7 +17,11 @@ export type BrandCard = {
   palette: string; // palette id
 };
 
-// Hook templates keyed by hook type. Placeholders: {product} {benefit} {audience} {brand} {number}
+// Hook templates keyed by hook type.
+// Placeholders: {product} {benefit} {audience} {brand}
+//   {number} = small plausible count/step/day (3–30)
+//   {pct}    = believable percentage (≤90)
+//   {count}  = large social-proof count ("10,000+")
 export const HOOK_TEMPLATES: Record<HookType, string[]> = {
   question: [
     "Still paying for {benefit} the hard way?",
@@ -36,12 +40,12 @@ export const HOOK_TEMPLATES: Record<HookType, string[]> = {
     "Stop settling. {product} delivers {benefit}.",
   ],
   statistic: [
-    "{number}% of {audience} saw {benefit} in week one.",
-    "{number} {audience} already made the switch to {product}.",
-    "Rated {number}/5 for one reason: {benefit}.",
+    "{pct}% of {audience} saw results in week one.",
+    "{count}+ {audience} already made the switch to {product}.",
+    "Rated 4.9/5 for one reason: {benefit}.",
     "{number}x faster to {benefit} — here's the proof.",
     "In {number} days, {benefit}. We measured it.",
-    "{number}% fewer regrets. {number}% more {benefit}.",
+    "{pct}% fewer regrets. {pct}% more wins.",
   ],
   story: [
     "I tried everything before {product}. Then {benefit} happened.",
@@ -77,32 +81,48 @@ export const HOOK_TEMPLATES: Record<HookType, string[]> = {
   ],
 };
 
-// Body templates keyed by awareness level.
+// Body templates keyed by awareness level — 6 each so candidates can
+// round-robin distinct bodies at a single awareness level.
 export const BODY_TEMPLATES: Record<Awareness, string[]> = {
   unaware: [
     "Most {audience} don't realize there's a better way. {product} quietly delivers {benefit} — no hype, just results. {brand} is changing the rules.",
     "You might not even know you're missing {benefit}. Once you see what {product} does, there's no unseeing it.",
     "Something is quietly eating your results. {product} fixes it — and gives you {benefit} on top.",
+    "The weird thing? The problem isn't you. It's the tool you're missing. {product} closes the gap with {benefit}.",
+    "Nobody warns {audience} about this. {product} does — then solves it with {benefit}.",
+    "It looks fine until you do the math. {product} turns that hidden drag into {benefit}.",
   ],
   problem_aware: [
     "You already know the problem. {product} is the fix: {benefit}, built for {audience} who are done messing around.",
     "That frustration you keep hitting? {product} removes it and hands you {benefit} instead.",
     "The pain is real. So is the solution — {product} by {brand}, engineered for {benefit}.",
+    "You've patched it, worked around it, complained about it. {product} just ends it — {benefit} included.",
+    "Every day you wait, the problem compounds. {product} stops the bleed and unlocks {benefit}.",
+    "You weren't wrong to be annoyed. You were missing {product} — now {benefit} is the default, not the dream.",
   ],
   solution_aware: [
     "There are plenty of options. {product} is the one {audience} keep coming back to — because {benefit} actually shows up.",
     "You've compared the alternatives. {product} wins on {benefit}, and it's not close.",
     "Solutions aren't scarce. Working ones are. {product}: {benefit}, proven for {audience}.",
+    "Same category, different league. {product} was rebuilt around one thing: {benefit}.",
+    "Others promise it. {product} ships it — {benefit}, without the learning curve or the lock-in.",
+    "If you've tried the rest, you already know what's missing. {product} is the {benefit} they left out.",
   ],
   product_aware: [
     "You've seen {product}. Here's the nudge: {benefit}, trusted by {audience}, ready when you are.",
-    "Still thinking about {product}? {benefit} is waiting — join {number}+ {audience} who already did.",
+    "Still thinking about {product}? {benefit} is waiting — join {count}+ {audience} who already did.",
     "{product} isn't going anywhere — but {benefit} could be yours today.",
+    "You did the research. {product} checked every box. The only step left is {benefit}.",
+    "Consider this your sign. {product} plus {benefit}, minus the hesitation.",
+    "The reviews already told you. {product} delivers {benefit} — your move.",
   ],
   most_aware: [
     "You know what {product} does. Now's the time: {benefit} plus our best offer for {audience}.",
     "Last call energy: {benefit} with {product}. {audience} who wait, regret it.",
     "{product} — {benefit}. You already know. Hit the button.",
+    "The deal's on the table: {product}, {benefit}, and a reason to act now.",
+    "No pitch needed. {product} does {benefit}. Grab it while it's live.",
+    "You were already convinced. {benefit} just got easier to say yes to.",
   ],
 };
 
@@ -115,20 +135,51 @@ export const CTA_TEMPLATES: Record<BrandCard["positioning"], string[]> = {
   rebellious: ["Break the rules", "Join the movement", "Ditch the old way"],
 };
 
-// Fill placeholders.
-export function fill(
-  template: string,
-  vars: { product: string; benefit: string; audience: string; brand: string; number: string }
-) {
-  return template
-    .replaceAll("{product}", vars.product)
-    .replaceAll("{benefit}", vars.benefit)
-    .replaceAll("{audience}", vars.audience)
-    .replaceAll("{brand}", vars.brand)
-    .replaceAll("{number}", vars.number);
+type Vars = {
+  product: string;
+  benefit: string; // cleaned benefit phrase
+  benefitVerb: string; // short verb/noun-led benefit, else falls back to product
+  audience: string;
+  brand: string;
+  number: string;
+  pct: string;
+  count: string;
+};
+
+// Sentence-case a benefit when it lands mid-sentence: lowercase the first
+// letter unless the placeholder starts the string or follows sentence-final
+// punctuation. Trailing punctuation is already stripped upstream.
+function fillBenefit(template: string, benefit: string, benefitVerb: string, product: string) {
+  return template.replaceAll("{benefit}", (match, offset: number) => {
+    const before = template.slice(0, offset);
+    const afterGetTo = /(?:^|[\s"'(])(get|to|for|delivers?|wins? on|hands you|unlock|need|want)\s*$/i.test(before);
+    let b = afterGetTo ? benefitVerb || product : benefit;
+    const sentenceStart = /^\s*$/.test(before) || /[.?!]["')\]]?\s*$/.test(before) || /—\s*$/.test(before);
+    // lowercase only ordinary words mid-sentence — don't butcher proper nouns
+    // like "StealAds" (second char uppercase signals a brand casing).
+    const looksProper = /^[A-Z][a-z]*[A-Z]/.test(b) || /^[A-Z]{2,}/.test(b);
+    if (sentenceStart && !looksProper) {
+      b = b.charAt(0).toUpperCase() + b.slice(1);
+    } else if (!sentenceStart && !looksProper) {
+      b = b.charAt(0).toLowerCase() + b.slice(1);
+    }
+    return b;
+  });
 }
 
-const NUMBERS = ["3", "5", "7", "10", "14", "21", "30", "87", "92", "97", "10,000", "500"];
+export function fill(template: string, v: Vars) {
+  return fillBenefit(template, v.benefit, v.benefitVerb, v.product)
+    .replaceAll("{product}", v.product)
+    .replaceAll("{audience}", v.audience)
+    .replaceAll("{brand}", v.brand)
+    .replaceAll("{number}", v.number)
+    .replaceAll("{pct}", v.pct)
+    .replaceAll("{count}", v.count);
+}
+
+const NUMBERS = ["3", "5", "7", "10", "14", "21", "30"];
+const PCTS = ["27", "34", "42", "51", "63", "72", "81", "90"];
+const COUNTS = ["500", "1,200", "5,000", "10,000", "50,000"];
 
 export type Candidate = { id: string; headline: string; body: string; cta: string };
 
@@ -142,6 +193,26 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
+// Clean an extracted benefit sentence into a short phrase usable mid-sentence:
+// strip trailing punctuation, cap at ~8 words / 60 chars.
+function cleanBenefit(s?: string): string {
+  const t = (s || "").replace(/[.!?…]+$/g, "").trim();
+  const first = t.split(/[,;:—]/)[0].trim();
+  const words = first.split(/\s+/);
+  if (!first) return "";
+  let out = words.length > 8 ? words.slice(0, 8).join(" ") : first;
+  // never leave a dangling conjunction/preposition after truncation
+  out = out.replace(/\s+(and|or|the|a|an|to|for|with|of|in|on|that|into)$/i, "");
+  return out.length > 60 ? out.slice(0, 57).trimEnd() : out;
+}
+
+// Benefits that read well after "get"/"to"/"delivers" start with a verb or a
+// plain noun phrase and stay short.
+function isSlotFriendly(b: string): boolean {
+  if (!b || b.split(/\s+/).length > 8) return false;
+  return !/\b(this|isn't|is|was|the real|stop guessing)\b/i.test(b.split(" ")[0]);
+}
+
 // Build ~24 candidate ads deterministically. creativity 1-4 controls how far
 // we drift from the stolen ad's psychology.
 export function buildCandidates(
@@ -149,18 +220,20 @@ export function buildCandidates(
   brand: BrandCard,
   creativity: 1 | 2 | 3 | 4
 ): Candidate[] {
-  const short = (s?: string) => {
-    const t = (s || "real results").split(/[.!?,;:—]/)[0].trim();
-    return t.length > 60 ? t.slice(0, 57).trimEnd() + "…" : t;
-  };
-  const benefit = short(brand.benefits[0]);
-  const benefit2 = short(brand.benefits[1]) || benefit;
-  const vars = (n: string, b: string) => ({
-    product: brand.product || "this product",
+  const product = brand.product || "this product";
+  const cleaned = brand.benefits.map(cleanBenefit).filter(Boolean);
+  const benefit = cleaned[0] || "real results";
+  const benefit2 = cleaned[1] || benefit;
+  const benefitVerb = cleaned.find(isSlotFriendly) || "";
+  const vars = (i: number, b: string): Vars => ({
+    product,
     benefit: b,
+    benefitVerb,
     audience: brand.audience.replaceAll("_", " "),
-    brand: brand.product || "the brand",
-    number: n,
+    brand: product,
+    number: NUMBERS[(i + 1) % NUMBERS.length],
+    pct: PCTS[i % PCTS.length],
+    count: COUNTS[i % COUNTS.length],
   });
 
   const sourceHook = decode.hookType.choice;
@@ -177,9 +250,6 @@ export function buildCandidates(
   } else if (creativity === 2) {
     hooks = allHooks;
     awares = [sourceAwareness];
-  } else if (creativity === 3) {
-    hooks = allHooks;
-    awares = allAware;
   } else {
     hooks = allHooks;
     awares = allAware;
@@ -193,23 +263,28 @@ export function buildCandidates(
 
   const candidates: Candidate[] = [];
   let i = 0;
+  // Round-robin a body template per candidate so no two candidates in the
+  // same awareness level share a body.
   outer: for (const hook of hooks) {
     for (const aw of awares) {
       const hTpls = HOOK_TEMPLATES[hook];
       const bTpls = BODY_TEMPLATES[aw];
       const cTpls = CTA_TEMPLATES[brand.positioning];
       const trig = triggerPool[i % triggerPool.length];
-      const num = NUMBERS[(seed + i) % NUMBERS.length];
       const b = i % 3 === 2 ? benefit2 : benefit;
-      const v = vars(num, b);
+      const v = vars(i, b);
       let headline = fill(pick(hTpls, seed + i), v);
       // Trigger-flavor the headline for a subset of candidates.
       if (trig === "urgency" && !/today|now/i.test(headline)) headline += " — today only";
-      if (trig === "specificity" && !/\d/.test(headline))
-        headline = `${num} reasons: ` + headline.charAt(0).toLowerCase() + headline.slice(1);
+      if (trig === "specificity" && !/\d/.test(headline)) {
+        const proper = /^[A-Z][a-z]*[A-Z]/.test(headline);
+        headline =
+          `${v.number} reasons: ` +
+          (proper ? headline : headline.charAt(0).toLowerCase() + headline.slice(1));
+      }
       if (trig === "fomo" && !/miss|left|gone/i.test(headline)) headline += " (before it's gone)";
       if (trig === "guarantee" && !/guarantee|risk/i.test(headline)) headline += " — risk-free";
-      const body = fill(pick(bTpls, seed + i * 3), v);
+      const body = fill(bTpls[i % bTpls.length], v); // round-robin, not seeded
       const cta = pick(cTpls, seed + i * 5);
       candidates.push({ id: `c${i}`, headline, body, cta });
       i++;
@@ -234,7 +309,7 @@ export function refineVariants(
     },
     {
       label: "add number",
-      ad: { ...ad, id: ad.id + "_r2", headline: /\d/.test(h) ? h : `${h} (${Math.floor(Math.random() * 60) + 30}% faster)` },
+      ad: { ...ad, id: ad.id + "_r2", headline: /\d/.test(h) ? h : `${h} (${Math.floor(Math.random() * 40) + 40}% faster)` },
     },
     {
       label: "add urgency",
